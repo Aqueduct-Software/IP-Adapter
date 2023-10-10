@@ -5,6 +5,7 @@ import torch
 from diffusers import StableDiffusionPipeline
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 from PIL import Image
+from loguru import logger
 
 from .utils import is_torch2_available
 if is_torch2_available():
@@ -42,14 +43,14 @@ class IPAdapter:
         
         self.pipe = sd_pipe
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning ip_adapter init {allocated_memory} GB")
+        logger.info(f"Beginning ip_adapter init {allocated_memory} GB")
         self.pipe.enable_xformers_memory_efficient_attention()
         self.pipe.enable_model_cpu_offload()
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning ip_adapter init after offload {allocated_memory} GB")
+        logger.info(f"Beginning ip_adapter init after offload {allocated_memory} GB")
         self.set_ip_adapter()
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning ip_adapter init after set_ip_adapter {allocated_memory} GB")
+        logger.info(f"Beginning ip_adapter init after set_ip_adapter {allocated_memory} GB")
 
         # load image encoder
         self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(self.image_encoder_path).to(self.device, dtype=torch.float16)
@@ -57,10 +58,10 @@ class IPAdapter:
         # image proj model
         self.image_proj_model = self.init_proj()
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning ip_adapter init after encoders and image_proj_model {allocated_memory} GB")
+        logger.info(f"Beginning ip_adapter init after encoders and image_proj_model {allocated_memory} GB")
         self.load_ip_adapter()
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning ip_adapter init after load_ip_adapter() {allocated_memory} GB")
+        logger.info(f"Beginning ip_adapter init after load_ip_adapter() {allocated_memory} GB")
 
     def init_proj(self):
         image_proj_model = ImageProjModel(
@@ -184,7 +185,7 @@ class IPAdapterXL(IPAdapter):
         **kwargs,
     ):
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Starting generate... memory allocated: {allocated_memory} GB")
+        logger.info(f"Starting generate... memory allocated: {allocated_memory} GB")
         self.set_scale(scale)
         
         if isinstance(pil_image, Image.Image):
@@ -210,7 +211,7 @@ class IPAdapterXL(IPAdapter):
         uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
 
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-        print(f"Beginning prompt embeds allocated memory {allocated_memory} GB")
+        logger.info(f"Beginning prompt embeds allocated memory {allocated_memory} GB")
         with torch.inference_mode():
             prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds = self.pipe.encode_prompt(
                 prompt, num_images_per_prompt=num_samples, do_classifier_free_guidance=True, negative_prompt=negative_prompt)
@@ -219,7 +220,7 @@ class IPAdapterXL(IPAdapter):
             
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
         generator = torch.Generator(self.device).manual_seed(seed) if seed is not None else None
-        print(f"Beginning controlnet {allocated_memory} GB")
+        logger.info(f"Beginning controlnet {allocated_memory} GB")
         images = self.pipe(
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
@@ -230,7 +231,7 @@ class IPAdapterXL(IPAdapter):
             **kwargs,
         ).images
         allocated_memory = torch.cuda.memory_allocated() / 1000000000
-
+        logger.success(f"Done with images memory: {allocated_memory} GB")
         return images
     
     
